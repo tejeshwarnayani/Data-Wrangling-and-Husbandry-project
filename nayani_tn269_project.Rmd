@@ -1,0 +1,127 @@
+---
+title: "Project"
+author: "tejeshwar"
+date: "4/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading packages , message=FALSE, warning=FALSE}
+library(rvest)
+library(dplyr)
+library(tidyverse)
+```
+
+### There are two parts to this project: 
+
+### 1) I want to compare data from united states with Italy and Spain and also predict the number of cases and deaths based on data from Italy and Spain
+
+*a)The link https://github.com/nytimes/covid-19-data/blob/master/us-states.csv contains a breakdown of US cases and deaths of COVID-19 by state.*
+
+```{r Scraping USA data from nytimes}
+#Extracting the data from the URL and loading it in to a data frame
+url <- "https://github.com/nytimes/covid-19-data/blob/master/us-states.csv"
+
+scraping_data  <- url %>%
+  read_html() %>%
+  html_nodes("table") %>% 
+  .[1] %>%
+  html_table(fill = TRUE) %>%
+  as.data.frame(stringsAsFactors = FALSE)
+
+head(scraping_data)
+```
+
+```{r cleaning USA covid data}
+#Covid19 data of USA
+usa_data <- scraping_data %>% select(2:ncol(scraping_data))
+
+#Change the column names of the dataframe
+colnames(usa_data) <- usa_data[1,]
+usa_data <- usa_data %>% slice(2:n())
+
+str(usa_data)
+#Change columns "cases" & "deaths" to numeric and "date" to Date format
+usa_data$cases <- as.numeric(usa_data$cases)
+usa_data$deaths <- as.numeric(usa_data$deaths)
+usa_data$date <- as.Date(usa_data$date)
+str(usa_data)
+
+head(usa_data)
+print("usa_data has daily values for each state and we need to convert it to daily values for united states")
+
+usa_data <- usa_data %>% 
+  select(-c("state","fips")) %>% 
+  group_by(date) %>%
+  summarise(cases = sum(cases, na.rm = TRUE), deaths = sum(deaths, na.rm = TRUE))
+
+#Saving the tidy version of scraped usa covid19 data
+# write.csv(usa_data,"E:/MSDS/II SEM/Data Wrangling/Project/usa_data.csv", row.names = FALSE)
+```
+
+```{r scraping italy data from wikipedia}
+url <- "https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Italy"
+
+scraping_data  <- url %>%
+  read_html() %>%
+  html_node(xpath = '//*[@id="mw-customcollapsible-jan"]/td[1]') 
+
+scraping_data  <- url %>%
+  read_html() %>%
+  html_nodes("body #content #bodyContent #mw-content-text .mw-parser-output table .mw-collapsible")
+
+#First 16 html_nodes and last 7 doesn't have the data needed for us.
+scraping_data <- scraping_data[17:(length(scraping_data)-7)]
+  
+data_list <- list()
+
+for (i in 1:(length(scraping_data))){
+  data <- scraping_data[[i]] %>% html_nodes("td") %>% html_text()
+  date <- as.Date(data[1])
+  cases <- as.numeric(gsub(",","",strsplit(data[3],"\\(")[[1]][1]))
+  deaths <- as.numeric(gsub(",","",strsplit(data[4],"\\(")[[1]][1]))
+  data_list[[i]] <- data.frame(date,cases,deaths)
+}
+
+italy_data <- do.call(rbind,data_list)
+str(italy_data)
+```
+
+```{r scraping spain data from wikipedia}
+url <- "https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Spain"
+
+scraping_data  <- url %>%
+  read_html() %>%
+  html_nodes("body #content #bodyContent #mw-content-text .mw-parser-output table .mw-collapsible")
+
+#First 16 html_nodes and last 7 doesn't have the data needed for us.
+scraping_data <- scraping_data[19:(length(scraping_data)-8)]
+  
+data_list <- list()
+
+for (i in 1:(length(scraping_data))){
+  data <- scraping_data[[i]] %>% html_nodes("td") %>% html_text()
+  date <- as.Date(data[1])
+  cases <- as.numeric(gsub(",","",strsplit(data[3],"\\(")[[1]][1]))
+  deaths <- as.numeric(gsub(",","",strsplit(data[4],"\\(")[[1]][1]))
+  data_list[[i]] <- data.frame(date,cases,deaths)
+}
+
+spain_data <- do.call(rbind,data_list)
+str(spain_data)
+```
+
+```{r scraping S&P500 index data from yahoo finance}
+url <- "https://finance.yahoo.com/quote/%5EGSPC/history?p=%5EGSPC"
+
+#S&P500 index - stockmarket index data
+smindex_data  <- url %>%
+  read_html() %>% 
+  html_table() %>%
+  .[[1]] %>%
+  as.data.frame()
+```
+
