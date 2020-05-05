@@ -1,2 +1,7 @@
 # Data-Wrangling-and-Husbandry
-Course final project
+
+Work in progress
+
+Used nayani_tn269_project1 to create the markdown report.
+
+nayani_tn269_project.Rmd is the original file.
