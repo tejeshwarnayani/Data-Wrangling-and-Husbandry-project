@@ -4,7 +4,6 @@ author: "tejeshwar"
 date: "4/21/2020"
 output:
   html_document: default
-  pdf_document: default
 ---
 
 ```{r Setup, include=FALSE}
@@ -118,7 +117,7 @@ usa_state_data %>% select(state,daily.deaths) %>% arrange(desc(daily.deaths)) %>
 ```{r Plots based on US covid19 data, echo=FALSE}
 most.affected.states <- c("New York","New Jersey","Massachusetts","Michigan","California","Illinois")
 
-df <- usa_state_data[usa_state_data$state %in% most.affected.states,c("date","cases","state","deaths")]
+df <- usa_state_data[usa_state_data$state %in% most.affected.states,]
 # df <- spread(df,state,cases)
 # df[is.na.data.frame(df)]<-0
 
@@ -192,7 +191,9 @@ str(spain_data)
 
 ```{r Data analysis of italy and spain data, echo=FALSE}
 italy_data <- read.csv("italy_data.csv",stringsAsFactors = FALSE)
+italy_data$date <- as.Date(italy_data$date)
 spain_data <- read.csv("spain_data.csv",stringsAsFactors = FALSE)
+spain_data$date <- as.Date(spain_data$date)
 
 italy_data <- italy_data %>% 
   mutate(daily.cases = (cases - lag(cases)), daily.deaths = (deaths - lag(deaths)))
