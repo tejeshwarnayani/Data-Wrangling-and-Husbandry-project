@@ -2,26 +2,33 @@
 title: "Project"
 author: "tejeshwar"
 date: "4/21/2020"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 5, fig.width = 9)
 ```
 
-```{r loading packages , message=FALSE, warning=FALSE}
+```{r Loading packages , message=FALSE, warning=FALSE}
 library(rvest)
 library(dplyr)
 library(tidyverse)
+library(zoo)
+library(tidyr)
+library(reshape)
+library(boot)
+library(splines)
 ```
 
-### There are two parts to this project: 
+#### 1) Compare covid19 data from united states with Italy and Spain and also predict the number of cases and deaths based on data from Italy and Spain
 
-### 1) I want to compare data from united states with Italy and Spain and also predict the number of cases and deaths based on data from Italy and Spain
+*a)The link https://github.com/nytimes/covid-19-data/blob/master/us-states.csv contains a breakdown of US cases and deaths of COVID-19 by state*  
+    
+I have used an ongoing repository of data (GitHub) on coronavirus cases and deaths in the U.S, which is maintained by New York Times. In the repository, we have data on cumulative coronavirus cases and deaths can be found in three files, one for each of these geographic levels: U.S., states, and counties. I have scraped the states level of data from the GitHub since it offers more detail than country level of data. This was little bit straightforward since we have a csv file in the repository.
 
-*a)The link https://github.com/nytimes/covid-19-data/blob/master/us-states.csv contains a breakdown of US cases and deaths of COVID-19 by state.*
-
-```{r Scraping USA data from nytimes}
+```{r Scraping USA data from nytimes, eval=FALSE, include=FALSE}
 #Extracting the data from the URL and loading it in to a data frame
 url <- "https://github.com/nytimes/covid-19-data/blob/master/us-states.csv"
 
@@ -35,39 +42,103 @@ scraping_data  <- url %>%
 head(scraping_data)
 ```
 
-```{r cleaning USA covid data}
+```{r Cleaning and saving the tidy version of USA covid data, eval=FALSE, include=FALSE}
 #Covid19 data of USA
-usa_data <- scraping_data %>% select(2:ncol(scraping_data))
+scraping_data <- scraping_data %>% select(2:ncol(scraping_data))
 
 #Change the column names of the dataframe
-colnames(usa_data) <- usa_data[1,]
-usa_data <- usa_data %>% slice(2:n())
+colnames(scraping_data) <- scraping_data[1,]
+scraping_data <- scraping_data %>% slice(2:n())
 
-str(usa_data)
-#Change columns "cases" & "deaths" to numeric and "date" to Date format
-usa_data$cases <- as.numeric(usa_data$cases)
-usa_data$deaths <- as.numeric(usa_data$deaths)
-usa_data$date <- as.Date(usa_data$date)
-str(usa_data)
+str(scraping_data)
+#Change columns "cases" & "deaths" to numeric 
+scraping_data$cases <- as.numeric(scraping_data$cases)
+scraping_data$deaths <- as.numeric(scraping_data$deaths)
+str(scraping_data)
 
-head(usa_data)
+head(scraping_data)
 print("usa_data has daily values for each state and we need to convert it to daily values for united states")
 
-usa_data <- usa_data %>% 
+usa_data <- scraping_data %>% 
   select(-c("state","fips")) %>% 
   group_by(date) %>%
   summarise(cases = sum(cases, na.rm = TRUE), deaths = sum(deaths, na.rm = TRUE))
 
+usa_state_data <- scraping_data %>% 
+  select(-c("fips"))
+
 #Saving the tidy version of scraped usa covid19 data
-# write.csv(usa_data,"E:/MSDS/II SEM/Data Wrangling/Project/usa_data.csv", row.names = FALSE)
+# write.csv(usa_data,"usa_data.csv", row.names = FALSE)
+# write.csv(usa_state_data,"usa_state_data.csv", row.names = FALSE)
 ```
 
-```{r scraping italy data from wikipedia}
-url <- "https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Italy"
+```{r Analysis of US covid19 data, echo=FALSE}
+usa_data <- read.csv("usa_data.csv",stringsAsFactors = FALSE)
+usa_data$date <- as.Date(usa_data$date)
 
-scraping_data  <- url %>%
-  read_html() %>%
-  html_node(xpath = '//*[@id="mw-customcollapsible-jan"]/td[1]') 
+usa_data <- usa_data %>% 
+  mutate(daily.cases = (cases - lag(cases)), daily.deaths = (deaths - lag(deaths)))
+usa_data[is.na.data.frame(usa_data)] <- 0
+
+usa_state_data <- read.csv("usa_state_data.csv",stringsAsFactors = FALSE)
+usa_state_data$date <- as.Date(usa_state_data$date)
+
+print("First six rows of usa_data and usa_state_date")
+head(usa_data)
+head(usa_state_data)
+
+#US state wise total number of cases and deaths
+usa_state_data_total <- usa_state_data %>% group_by(state) %>% summarise(cases=sum(cases),deaths=sum(deaths)) %>% arrange(desc(cases))
+
+print("Top 5 states based on total number of cases")
+head(usa_state_data_total,5)
+print("Top 5 states based on total number of deaths")
+usa_state_data_total %>% arrange(desc(deaths)) %>% head(5)
+
+#Extracting and adding daily values from cumulative values for cases & deaths
+usa_state_data <- usa_state_data %>%
+    group_by(state) %>%
+    arrange(date) %>%
+    mutate(daily.cases = (cases - lag(cases)), daily.deaths = (deaths - lag(deaths)))
+usa_state_data[is.na.data.frame(usa_state_data)] <- 0
+tail(usa_state_data)
+
+#top 5 highest daily increases in cases and deaths
+usa_state_data %>% arrange(desc(daily.cases)) %>% head(5)
+usa_state_data %>% arrange(desc(daily.deaths)) %>% head(5)
+paste("All the scenarios are from New York state, so lets look at top 5 cases from different states")
+
+#top 5 state highest daily increases in cases and deaths
+usa_state_data %>% select(state,daily.cases) %>% arrange(desc(daily.cases)) %>% 
+  group_by(state) %>% top_n(1,daily.cases) %>% head(5)
+usa_state_data %>% select(state,daily.deaths) %>% arrange(desc(daily.deaths)) %>% 
+  group_by(state) %>% top_n(1,daily.deaths) %>% head(5)
+```
+
+```{r Plots based on US covid19 data, echo=FALSE}
+most.affected.states <- c("New York","New Jersey","Massachusetts","Michigan","California","Illinois")
+
+df <- usa_state_data[usa_state_data$state %in% most.affected.states,c("date","cases","state","deaths")]
+# df <- spread(df,state,cases)
+# df[is.na.data.frame(df)]<-0
+
+# ggplot(data = df, mapping = aes(x = date, y = cases, color = state)) + geom_smooth()
+# ggplot(data = df, mapping = aes(x = date, y = log(cases), color = state)) + geom_smooth()
+
+ggplot(data = df, mapping = aes(x = date, y = daily.cases, color = state)) + geom_smooth()
+
+# ggplot(data = df, mapping = aes(x = date, y = deaths, color = state)) + geom_smooth()
+# ggplot(data = df, mapping = aes(x = date, y = log(deaths), color = state)) + geom_smooth()
+
+ggplot(data = df, mapping = aes(x = date, y = daily.deaths, color = state)) + geom_smooth()
+```
+
+We can see very clearly that in states like New York, New jesrey, the number of cases and deaths have peaked and are in a downward trend, which is a good news. But in other states trend is upwards and it might take few weeks to see a peak and a decreasing trend.  
+
+*b)The link https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Italy contains a breakdown of Italy cases and deaths of COVID-19 & The link https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Spain contains a breakdown of Spain cases and deaths*
+
+```{r Scraping italy data from wikipedia, eval=FALSE, include=FALSE}
+url <- "https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Italy"
 
 scraping_data  <- url %>%
   read_html() %>%
@@ -88,9 +159,12 @@ for (i in 1:(length(scraping_data))){
 
 italy_data <- do.call(rbind,data_list)
 str(italy_data)
+
+#Saving the tidy version of scraped Italy covid19 data
+# write.csv(italy_data,"italy_data.csv", row.names = FALSE)
 ```
 
-```{r scraping spain data from wikipedia}
+```{r Scraping spain data from wikipedia, eval=FALSE, include=FALSE}
 url <- "https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Spain"
 
 scraping_data  <- url %>%
@@ -112,9 +186,114 @@ for (i in 1:(length(scraping_data))){
 
 spain_data <- do.call(rbind,data_list)
 str(spain_data)
+#Saving the tidy version of scraped Spain covid19 data
+# write.csv(spain_data,"spain_data.csv", row.names = FALSE)
 ```
 
-```{r scraping S&P500 index data from yahoo finance}
+```{r Data analysis of italy and spain data, echo=FALSE}
+italy_data <- read.csv("italy_data.csv",stringsAsFactors = FALSE)
+spain_data <- read.csv("spain_data.csv",stringsAsFactors = FALSE)
+
+italy_data <- italy_data %>% 
+  mutate(daily.cases = (cases - lag(cases)), daily.deaths = (deaths - lag(deaths)))
+italy_data[is.na.data.frame(italy_data)] <- 0
+
+spain_data <- spain_data %>% 
+  mutate(daily.cases = (cases - lag(cases)), daily.deaths = (deaths - lag(deaths)))
+spain_data[is.na.data.frame(spain_data)] <- 0
+
+sprintf("Highest number of daily cases in italy and spain are %d and %d respectively",max(italy_data$daily.cases), max(spain_data$daily.cases))
+
+sprintf("Highest number of daily deaths in italy and spain are %d and %d respectively",max(italy_data$daily.deaths), max(spain_data$daily.deaths))
+```
+
+*c) Comparing the covid19 data of US, Spain and Italy.*
+
+Let us look at the trend of covid19 data of US, Spain and Italy.
+
+```{r Comparing covid19 data of US Spain and Italy, echo=FALSE, message=FALSE, warning=FALSE}
+df <- rbind(usa_data %>% mutate(country = "US"), spain_data %>% mutate(country = "spain"), italy_data %>% mutate(country = "italy"))
+
+ggplot(data = df, mapping = aes(x = date, y = daily.cases, color = country)) + geom_smooth()
+# ggplot(data = df, mapping = aes(x = date, y = daily.deaths, color = country)) + geom_smooth()
+ggplot(data = df, mapping = aes(x = date, y = cases, color = country)) + geom_smooth()
+# ggplot(data = df, mapping = aes(x = date, y = deaths, color = country)) + geom_smooth()
+```
+
+Initially when I proposed to compare italy, spain covid19 data to US, they numbers where similar but since then spain and italy had reached peak and their trend is now downwards. Whereas the US numbers still keep rising and looks like it reached peak recently.
+
+But New York and New Jersey numbers are similar to ltaly and spain. Lets plot their graph and check it. 
+
+```{r Comparing covid19 data of New York New Jersey Spain and Italy, message=FALSE, warning=FALSE}
+df <- usa_state_data[usa_state_data$state%in%c("New York","New Jersey"),]
+df <- bind_rows(df, spain_data %>% mutate(state = "spain"), italy_data %>% mutate(state = "italy"))
+
+ggplot(data = df, mapping = aes(x = date, y = daily.cases, color = state)) + geom_smooth()
+# ggplot(data = df, mapping = aes(x = date, y = daily.deaths, color = state)) + geom_smooth()
+ggplot(data = df, mapping = aes(x = date, y = cases, color = state)) + geom_smooth()
+# ggplot(data = df, mapping = aes(x = date, y = deaths, color = state)) + geom_smooth()
+```
+
+Here we can observe a better similarity in trends of number of cases. In all the cases peak has reached and downward trend has started.
+
+I have mentioned in proposal I will predict number of US cases on Spain and Italy data but since then they have drastically changed. So now instead of what I proposed, I will try to fit a polynomial regression to New York data and predict their future values.
+
+I used cross-validation to select the optimal degree for the polynomial
+
+```{r Builiding a polynomial regression on New York data, message=FALSE, warning=FALSE}
+ny_data <- usa_state_data[usa_state_data$state=="New York",]
+ny_data$day <- as.numeric(ny_data$date - min(ny_data$date) + 1)
+
+mse <- rep(NA, 10)
+for (i in 1:10) {
+    fit <- glm(daily.cases ~ poly(day, i), data = ny_data)
+    mse[i] <- cv.glm(ny_data, fit, K = 10)$delta[1]
+}
+plot(1:10, mse, xlab = "Degree", ylab = "Test MSE", type = "o" , main="Test MSE w.r.t degree of the fitted polynomial")
+```
+I have plotted test Mean squared error for each degree of polynomial. It shows that the CV error reduces as we increase degree from 1 to 4, stay same till degree 5, and then the starts increasing for higher degrees. We pick the polynomial degree as 4.
+
+```{r Predict and plot future daily.cases for NY based on chosen polynomial regression, echo=FALSE, message=FALSE, warning=FALSE}
+lm.ny <- lm(daily.cases ~ poly(day,4),data=ny_data)
+# summary(lm.ny)
+
+new.data <- data.frame(day = 1:92)
+new.data$daily.cases <- predict(lm.ny, new.data)
+ggplot(new.data, mapping = aes(x = day, y = daily.cases, color = "r")) + geom_smooth() +
+  geom_smooth(ny_data, mapping = aes(x = day, y = daily.cases, color = "b"))
+```
+
+We can clearly see that though a polynomial regression fits well, it doesn't predict it well(Expecting a downward trend). Let's build a regression spline and see if it's predicts better. 
+
+I used cross-validation to select the optimal degree for freedom of B-splines.
+
+```{r Builiding a B-spline model on New York data, echo=FALSE, message=FALSE, warning=FALSE}
+cv <- rep(NA, 16)
+for (i in 3:16) {
+    fit <- glm(daily.cases ~ bs(day, df = i), data = ny_data)
+    cv[i] <- cv.glm(ny_data, fit, K = 10)$delta[1]
+}
+plot(3:16, cv[-c(1, 2)], lwd = 2, xlab = "df", ylab = "CV error", type = "o", main="CV error w.r.t degree of freedom")
+```
+
+There is no visible trend in the plot, but CV error attains minimum at df=6, so we can choose 6 as the optimal degrees of freedom. We need to split day(1 to 64) into 5 parts to attain dof of 6. Using the ggplot of newyork daily cases, we can pick them as (4, 11, 30, 35, 42)
+
+```{r Predict and plot future daily.cases for NY based on chosen B-spline model, message=FALSE, warning=FALSE}
+bs.ny <- lm(daily.cases ~ bs(day, knots = c(4, 11, 30, 35, 42)),ny_data)
+
+new.data <- data.frame(day = 1:92)
+new.data$daily.cases <- predict(bs.ny, new.data)
+ggplot(new.data, mapping = aes(x = day, y = daily.cases, color = "r")) + geom_smooth() +
+  geom_smooth(ny_data, mapping = aes(x = day, y = daily.cases, color = "b"))
+```
+
+B-spline polynomial spline fits the data well and also predicts it better that the polynomial regression. This is an expected performance. 
+
+#### 2) The effect of number of coronavirus cases on the economy by looking at S&P 500 stock market index.
+
+*a)The link https://finance.yahoo.com/quote/%5EGSPC/history?p=%5EGSPC contains daily values of S&P index.*
+
+```{r Scraping S&P 500 index data from yahoo finance, eval=FALSE, include=FALSE}
 url <- "https://finance.yahoo.com/quote/%5EGSPC/history?p=%5EGSPC"
 
 #S&P500 index - stockmarket index data
@@ -123,5 +302,85 @@ smindex_data  <- url %>%
   html_table() %>%
   .[[1]] %>%
   as.data.frame()
+
+str(smindex_data)
 ```
+
+```{r Cleaning and saving a tidy version of S&P 500 index data, eval=FALSE, include=FALSE}
+#removing the last row since it doesnot contain data and is not required
+smindex_data <- smindex_data %>% top_n(nrow(smindex_data)-1)
+
+#Changing column names from Date to date and Close* to close
+colnames(smindex_data)[1] <- "date"
+colnames(smindex_data)[5] <- "close"
+
+#Selecting only date, Open, high, low and close columns
+smindex_data <- smindex_data[,c(1:5)]
+
+#Remove commas from values before converting them to numeric
+cl <- c("Open","High","Low","close") 
+smindex_data[cl] <- lapply(smindex_data[cl], gsub, pattern = ",", replacement = "")
+
+#convert all cloumns except date to numeric
+smindex_data[, 2:5] <- sapply(smindex_data[, 2:5], as.numeric)
+str(smindex_data)
+
+#We need to change the date column to date format. Extracting the month and date from the date column to do so.
+date <- strsplit(smindex_data$date,",")
+date <- lapply(date, `[[`, 1)
+
+month.abb
+for (i in 1:length(date)){
+  #Get month number using month.abb which has month abbreviations
+  month <- match(substr(date[[i]],1,3),month.abb)
+  day <- as.numeric(substr(date[[i]],5,6))
+  #Get new date using month, day and year
+  smindex_data$date[i] <- as.character(as.Date(ISOdate(year = 2020, month = month, day = day)))
+}
+
+smindex_data$date <- as.Date(smindex_data$date)
+str(smindex_data)
+
+# saving the tidy version 
+# write.csv(smindex_data,"smiindex.csv",row.names = FALSE)
+```
+
+```{r Data Analysis on S&P 500 data}
+smindex_data <- read.csv("smiindex.csv",stringsAsFactors = FALSE)
+smindex_data$date <- as.Date(smindex_data$date)
+
+sprintf("The highest S&P index rose to is:%.2f and the lowest value it reached is:%.2f", max(smindex_data$High), min(smindex_data$Low))
+
+smindex_data$change <- smindex_data$close - smindex_data$Open
+sprintf("The highest gain in S&P index in a day is:%.2f and the highest drop is:%.2f", max(smindex_data$change), abs(min(smindex_data$change)))
+```
+With in a span of a month, from 21-Feb to 21-March, S&P index dropped from 3300 to 2200 points causing a panic. But since then it recovered and now it is around 2800.  
+
+
+*b)Data analysis on US covid19 and S&P 500 data*
+
+```{r Data analysis on US covid19 and S&P 500 data, echo=FALSE}
+#combine both US covid19 data and S&P 500 on date
+df <- merge(usa_data,smindex_data[,c(1,2,5)],by="date",all.x = TRUE)
+str(df)
+head(df)
+
+#We don't have open and close values for S&P 500 due to stock market being closed on those days, so we replace NA with last non NA values.
+df$Open <- na.locf(df$Open)
+df$close <- na.locf(df$close)
+head(df)
+
+cor(df[,c("cases","deaths","Open","close")])
+
+ggplot(df, aes(x = df$date)) +
+  geom_smooth(aes(y = scale(df$cases), colour = "covid19 cases")) +
+  geom_smooth(aes(y = scale(df$deaths), colour = "covid19 deaths")) +
+  geom_smooth(aes(y = scale(df$daily.cases), colour = "covid19 daily cases")) +
+  geom_smooth(aes(y = scale(df$daily.deaths), colour = "covid19 daily deaths")) +
+  geom_smooth(aes(y = scale(df$Open), colour = "S&P daily opening value")) +
+  geom_smooth(aes(y = scale(df$close), colour = "S&P daily closing value")) +
+  xlab("predicted probit probability") + ylab("")
+```
+
+Though these we don't observe a clear negative trend but we can see that S&P index intially dropped due to rise in covid19 cases but after reaching a low has started to rise. That might due to increased measures taken by govt or other reasons, which might have made the public to reassure about US economy.
 
